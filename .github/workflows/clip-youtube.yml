@@ -1,0 +1,85 @@
+name: Clip a YouTube video
+
+on:
+  workflow_dispatch:
+    inputs:
+      youtube_url:
+        description: YouTube URL for content you own or have permission to process
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  clip:
+    name: Process video
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      AUTOCLIP_HOME: ${{ runner.temp }}/autoclip
+    steps:
+      - name: Check out AutoClip
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-liberation
+
+      - name: Install AutoClip
+        run: |
+          uv venv --python 3.11
+          uv pip install -e .
+
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama and download model
+        run: |
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              cat "$RUNNER_TEMP/ollama.log"
+              echo "::error::Ollama did not start."
+              exit 1
+            fi
+            sleep 2
+          done
+          ollama pull llama3.1:8b
+
+      - name: Configure local provider
+        run: |
+          uv run --no-sync python - <<'PY'
+          from autoclip.config import Settings, save
+
+          settings = Settings()
+          settings.active_provider = "ollama"
+          settings.providers["ollama"].model = "llama3.1:8b"
+          save(settings)
+          PY
+
+      - name: Run AutoClip
+        env:
+          YOUTUBE_URL: ${{ inputs.youtube_url }}
+        run: |
+          uv run --no-sync autoclip clip "$YOUTUBE_URL" \
+            --provider ollama \
+            --whisper-model tiny \
+            --max-clips 5
+
+      - name: Upload clips
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoclip-clips
+          path: ${{ runner.temp }}/autoclip/exports/**/*.mp4
+          if-no-files-found: error
+          retention-days: 7

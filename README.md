@@ -132,6 +132,25 @@ docker compose -f docker/compose.yaml up --build
 docker compose -f docker/compose.yaml --profile gpu up --build
 ```
 
+### Run a one-off job on GitHub Actions
+
+The **Clip a YouTube video** workflow can process a video without installing
+AutoClip on your computer. In the repository's **Actions** tab, choose that
+workflow, select **Run workflow**, and enter a YouTube URL. When it finishes,
+download the `autoclip-clips` artifact from the run's summary page.
+
+This is a temporary CPU-only job, not a hosted web app. It downloads Ollama and
+the `llama3.1:8b` model on each run, uses Whisper's `tiny` model for
+transcription, and has a six-hour job limit. GitHub Actions usage limits apply.
+The source video is downloaded onto GitHub's runner, and exported clips are
+stored as a GitHub artifact for seven days. The local Ollama model does not send
+transcripts to an external LLM provider.
+
+YouTube may block downloads from GitHub-hosted runners. The workflow does not
+use browser cookies or attempt to bypass those checks; if YouTube refuses the
+download, the job will fail. Only process videos you own or have permission to
+use.
+
 ## Using it
 
 Everything the UI does is also on the CLI:
